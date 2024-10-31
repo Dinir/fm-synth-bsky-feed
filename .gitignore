@@ -132,3 +132,7 @@ dist
 # intellij
 .idea/
 *.iml
+
+.env
+db.sqlite
+publishFeedGen.ts
