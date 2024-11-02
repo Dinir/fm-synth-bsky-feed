@@ -135,4 +135,4 @@ dist
 
 .env
 db.sqlite
-publishFeedGen.ts
+scripts/publishFeedGen.ts
