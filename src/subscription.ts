@@ -1,54 +1,43 @@
-import {
-  OutputSchema as RepoEvent,
-  isCommit,
-} from './lexicon/types/com/atproto/sync/subscribeRepos'
-import { FirehoseSubscriptionBase, getOpsByType } from './util/subscription'
+import { FirehoseSubscriptionBase, JetstreamEvent } from './util/subscription'
 
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
-  async handleEvent(evt: RepoEvent) {
-    if (!isCommit(evt)) return
+  async handleEvent(evt: JetstreamEvent) {
+    if (!evt.commit) return
 
-    const ops = await getOpsByType(evt)
-
-    const postsToDelete = ops.posts.deletes.map((del) => del.uri)
-    const postsToCreate = ops.posts.creates
-      .filter((create) => {
-        // only FM synth-related posts
-        const text = create.record.text
-        const searchTerms = [
-          'FM Synth',
-          'FM synth',
-          'fm synth',
-          'FM Synthesizer',
-          'FM synthesizer',
-          'fm synthesizer',
-          'FM Synthesizers',
-          'FM synthesizers',
-          'fm synthesizers',
-          'FMシンセ',
-          'FMシンセサイザー'
-        ]
-        return searchTerms.some(term => text.includes(term))
-      })
-      .map((create) => {
-        // map FM synth-related posts to a db row
-        return {
-          uri: create.uri,
-          cid: create.cid,
-          indexedAt: new Date().toISOString(),
-        }
-      })
-
-    if (postsToDelete.length > 0) {
+    if (evt.commit.operation === 'delete') {
+      const uri = `at://${evt.did}/app.bsky.feed.post/${evt.commit.rkey}`
       await this.db
         .deleteFrom('post')
-        .where('uri', 'in', postsToDelete)
+        .where('uri', '=', uri)
         .execute()
+      return
     }
-    if (postsToCreate.length > 0) {
+
+    if (evt.commit.operation === 'create' && evt.commit.record) {
+      const text = (evt.commit.record.text as string) ?? ''
+      const searchTerms = [
+        'FM Synth',
+        'FM synth',
+        'fm synth',
+        'FM Synthesizer',
+        'FM synthesizer',
+        'fm synthesizer',
+        'FM Synthesizers',
+        'FM synthesizers',
+        'fm synthesizers',
+        'FMシンセ',
+        'FMシンセサイザー',
+      ]
+      if (!searchTerms.some((term) => text.includes(term))) return
+
+      const uri = `at://${evt.did}/app.bsky.feed.post/${evt.commit.rkey}`
       await this.db
         .insertInto('post')
-        .values(postsToCreate)
+        .values({
+          uri,
+          cid: evt.commit.cid ?? '',
+          indexedAt: new Date().toISOString(),
+        })
         .onConflict((oc) => oc.doNothing())
         .execute()
     }
